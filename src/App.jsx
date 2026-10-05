@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   Activity, AlertTriangle, ShieldCheck, ShieldAlert, CheckCircle, XCircle, 
   FileText, Download, Play, RefreshCw, Cpu, Gauge, Radio, Clock, Database, 
-  Terminal, ArrowRight, Zap, Info, ChevronRight, Lock
+  Terminal, ArrowRight, Zap, Info, ChevronRight, Lock, Sparkles, Volume2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import sha256 from 'js-sha256';
+import confetti from 'canvas-confetti';
 
 // Direct API calls or Mock Fallback for flawless operation
 const API_BASE = 'http://localhost:5000/api';
@@ -28,13 +29,97 @@ export default function App() {
   const [actionStatus, setActionStatus] = useState(null); // 'APPROVED' | 'REJECTED' | null
   const [activeTab, setActiveTab] = useState("all");
 
-  // Fetch telemetry and timeline on mount
+  const [uploadedPdfs, setUploadedPdfs] = useState([]);
+  const [selectedPdf, setSelectedPdf] = useState(null);
+  const [alarmActive, setAlarmActive] = useState(false);
+  const [alarmText, setAlarmText] = useState("");
+
+  // Live Jitter Simulation for realistic space control room experience
+  useEffect(() => {
+    const jitterTimer = setInterval(() => {
+      setTelemetry(prev => {
+        if (prev.thrusterPressure.status === "CRITICAL") return prev;
+        const jitter = (Math.random() * 0.04 - 0.02);
+        return {
+          ...prev,
+          thrusterPressure: {
+            ...prev.thrusterPressure,
+            value: parseFloat((prev.thrusterPressure.value + jitter).toFixed(2))
+          },
+          solarInput: {
+            ...prev.solarInput,
+            value: parseFloat((420.0 + Math.random() * 5).toFixed(1))
+          }
+        };
+      });
+    }, 2000);
+    return () => clearInterval(jitterTimer);
+  }, []);
+
+
+  // Web Audio Synth for Space Control Siren Sound
+  const triggerSirenSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(440, ctx.currentTime + 0.3);
+      osc.frequency.linearRampToValueAtTime(880, ctx.currentTime + 0.6);
+
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.2);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 1.2);
+    } catch (e) {}
+  };
+
+  // Trigger 5-Second Red Emergency Siren Banner & Audio Effect
+  const triggerAlarm = (message) => {
+    setAlarmText(message);
+    setAlarmActive(true);
+    triggerSirenSound();
+    
+    // Play siren pulse twice
+    setTimeout(triggerSirenSound, 800);
+    setTimeout(triggerSirenSound, 1600);
+
+    // Auto-disable alarm after exactly 5 seconds
+    setTimeout(() => {
+      setAlarmActive(false);
+    }, 5000);
+  };
+
+  // Fetch telemetry, timeline, and uploaded PDFs on mount
   useEffect(() => {
     fetchTelemetry();
     fetchTimeline();
-    const interval = setInterval(fetchTelemetry, 3000);
+    fetchUploadedPdfs();
+    const interval = setInterval(() => {
+      fetchTelemetry();
+      fetchUploadedPdfs();
+    }, 4000);
     return () => clearInterval(interval);
   }, []);
+
+
+  const fetchUploadedPdfs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/uploaded-pdfs`);
+      if (res.ok) {
+        const data = await res.json();
+        setUploadedPdfs(data);
+      }
+    } catch (err) {}
+  };
+
 
   const fetchTelemetry = async () => {
     try {
@@ -94,6 +179,9 @@ export default function App() {
         setTelemetry(data.telemetry);
         setActiveAnomaly(data.anomaly);
         
+        // Trigger 5-Second Red Emergency Siren Alarm
+        triggerAlarm(`CRITICAL ANOMALY BREACH: [${data.anomaly.subsystem}] ${data.anomaly.metric} = ${data.anomaly.value}`);
+
         // Auto-run Copilot Engine
         evaluateAnomaly(data.anomaly.queryText, data.anomaly);
       }
@@ -126,9 +214,13 @@ export default function App() {
 
       setTelemetry(newTelem);
       setActiveAnomaly(mockAnomaly);
+      if (mockAnomaly) {
+        triggerAlarm(`CRITICAL ANOMALY BREACH: [${mockAnomaly.subsystem}] ${mockAnomaly.metric} = ${mockAnomaly.value}`);
+      }
       evaluateAnomaly(mockAnomaly.queryText, mockAnomaly);
     }
   };
+
 
   // Copilot Query Engine
   const evaluateAnomaly = async (queryText, metricContext = null) => {
@@ -282,12 +374,33 @@ export default function App() {
     }
   };
 
-  // Human-in-the-Loop Operator Decision
+  // Human-in-the-Loop Operator Decision (Auto-Executes Action on Telemetry)
   const handleOperatorDecision = async (decision) => {
     setActionStatus(decision);
     const ts = new Date().toISOString();
     const sopId = copilotResponse?.verifiedEvidence?.sopId || "SOP-UNK";
     const desc = `HUMAN-IN-THE-LOOP: Operator ${decision} procedure [${sopId}]`;
+
+    // If APPROVED, trigger celebratory confetti and auto-correct telemetry
+    if (decision === 'APPROVED') {
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      } catch (e) {}
+
+      setTimeout(() => {
+        setTelemetry(prev => ({
+          ...prev,
+          thrusterPressure: { value: 2.3, status: "NOMINAL", unit: "bar", nominalRange: "> 2.0 bar" },
+          rwTemperature: { value: 58.5, status: "NOMINAL", unit: "°C", nominalRange: "< 65.0 °C" },
+          batteryVoltage: { value: 29.8, status: "NOMINAL", unit: "V", nominalRange: "> 28.0 V" }
+        }));
+      }, 1200);
+    }
+
 
     try {
       await fetch(`${API_BASE}/copilot/action`, {
@@ -306,6 +419,7 @@ export default function App() {
       }, ...prev]);
     }
   };
+
 
   // Export Incident Audit Log to PDF & Markdown
   const handleExportReport = (format) => {
@@ -364,10 +478,58 @@ export default function App() {
     }
   };
 
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [pdfUploadStatus, setPdfUploadStatus] = useState(null);
+
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingPdf(true);
+    setPdfUploadStatus(null);
+    const formData = new FormData();
+    formData.append('pdfFile', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/upload-pdf`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPdfUploadStatus({ success: true, message: `Ingested ${data.proceduresIndexed} procedures from ${file.name} (Total Pages: ${data.totalPages})` });
+        fetchTimeline();
+      } else {
+        const err = await res.json();
+        setPdfUploadStatus({ success: false, message: err.error || "Failed to process PDF file" });
+      }
+    } catch (err) {
+      setPdfUploadStatus({ success: false, message: "Server connection failed during PDF upload" });
+    } finally {
+      setUploadingPdf(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {/* 5-SECOND EMERGENCY SIREN ALARM BANNER */}
+      {alarmActive && (
+        <div className="bg-red-600 text-white font-mono font-bold text-sm px-6 py-2 flex items-center justify-between animate-pulse shadow-lg z-50 border-b border-red-400">
+          <div className="flex items-center space-x-3">
+            <AlertTriangle className="w-5 h-5 text-white animate-bounce" />
+            <span className="tracking-wider uppercase">🚨 CRITICAL FLIGHT ALARM SIREN (5s TIMER ACTIVE):</span>
+            <span className="underline">{alarmText}</span>
+          </div>
+          <span className="bg-slate-950/60 text-red-200 px-2.5 py-0.5 rounded text-xs">
+            AUDIO SIREN ACTIVE
+          </span>
+        </div>
+      )}
+
       {/* Top Space Control Header */}
       <header className="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur px-6 flex items-center justify-between sticky top-0 z-50">
+
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-cyan-400">
             <Radio className="w-5 h-5 animate-pulse" />
@@ -406,8 +568,74 @@ export default function App() {
         {/* PANEL 1: TELEMETRY & INGESTION (Left Panel - 3 cols) */}
         <section className="lg:col-span-3 flex flex-col space-y-4">
           
+          {/* PDF Flight Manual Ingestion Widget */}
+          <div className="glass-panel p-4 rounded-xl border border-slate-800">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-cyan-400" />
+                <h2 className="text-sm font-semibold text-slate-200 uppercase font-mono">PDF Manual RAG Upload</h2>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                PDF Reader
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mb-3">
+              Upload any Satellite Flight Manual / SOP PDF to index exact pages into RAG Knowledge Base:
+            </p>
+
+            <label className="flex items-center justify-center space-x-2 w-full p-2.5 bg-slate-900 hover:bg-slate-800 border border-dashed border-cyan-500/50 hover:border-cyan-400 rounded-lg cursor-pointer transition text-xs font-mono text-cyan-300">
+              <Download className="w-4 h-4 text-cyan-400 transform rotate-180" />
+              <span>{uploadingPdf ? "Parsing Pages..." : "Select SOP / Flight Manual PDF"}</span>
+              <input 
+                type="file" 
+                accept="application/pdf" 
+                onChange={handlePdfUpload} 
+                className="hidden" 
+                disabled={uploadingPdf} 
+              />
+            </label>
+
+            {pdfUploadStatus && (
+              <div className={`mt-2 p-2 rounded text-[11px] font-mono border ${
+                pdfUploadStatus.success ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800' : 'bg-red-950/60 text-red-300 border-red-800'
+              }`}>
+                {pdfUploadStatus.message}
+              </div>
+            )}
+
+            {/* List of Uploaded PDF Documents */}
+            {uploadedPdfs.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-800">
+                <div className="text-[11px] font-mono text-slate-300 font-semibold mb-2 flex items-center justify-between">
+                  <span>INDEXED FLIGHT MANUALS ({uploadedPdfs.length})</span>
+                  <span className="text-[10px] text-cyan-400">Click to View</span>
+                </div>
+
+                <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                  {uploadedPdfs.map(pdf => (
+                    <button
+                      key={pdf.id}
+                      onClick={() => setSelectedPdf(pdf)}
+                      className="w-full text-left p-2 rounded bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 transition flex items-center justify-between text-xs font-mono group"
+                    >
+                      <div className="flex items-center space-x-2 truncate">
+                        <FileText className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                        <span className="text-slate-200 truncate">{pdf.filename}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded font-mono ml-2">
+                        {pdf.totalPages} Pages
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+
           {/* Preset Failure Controls */}
           <div className="glass-panel p-4 rounded-xl border border-slate-800">
+
             <div className="flex items-center space-x-2 mb-3">
               <Zap className="w-4 h-4 text-amber-400" />
               <h2 className="text-sm font-semibold text-slate-200 tracking-wide uppercase font-mono">
@@ -489,9 +717,55 @@ export default function App() {
                     {telemetry.thrusterPressure.status}
                   </span>
                 </div>
-                <div className="flex items-baseline justify-between font-mono">
+                <div className="flex items-center justify-between font-mono">
                   <span className="text-lg font-bold">{telemetry.thrusterPressure.value} {telemetry.thrusterPressure.unit}</span>
-                  <span className="text-[11px] text-slate-400">Target: {telemetry.thrusterPressure.nominalRange}</span>
+                  
+                  {/* Interactive Adjuster Buttons */}
+                  <div className="flex items-center space-x-1">
+                    <button 
+                      onClick={() => {
+                        const newVal = parseFloat((telemetry.thrusterPressure.value - 0.2).toFixed(1));
+                        const isCrit = newVal <= 2.0;
+                        const newTelem = {
+                          ...telemetry,
+                          thrusterPressure: { 
+                            ...telemetry.thrusterPressure, 
+                            value: newVal, 
+                            status: isCrit ? "CRITICAL" : "NOMINAL" 
+                          }
+                        };
+                        setTelemetry(newTelem);
+                        if (isCrit) {
+                          const mockAnomaly = { subsystem: "Propulsion", metric: "Thruster-2 Chamber Pressure", value: `${newVal} bar`, nominal: "> 2.0 bar", queryText: `Thruster-2 Chamber Pressure Drop to ${newVal} bar` };
+                          setActiveAnomaly(mockAnomaly);
+                          triggerAlarm(`CRITICAL PRESSURE DROP: Thruster Chamber Pressure = ${newVal} bar`);
+                          evaluateAnomaly(mockAnomaly.queryText, mockAnomaly);
+                        }
+                      }}
+                      className="px-2 py-0.5 bg-red-950 hover:bg-red-800 text-red-300 border border-red-800 rounded font-bold text-xs"
+                      title="Decrease Pressure (Drop Below Threshold)"
+                    >
+                      - 0.2 bar
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const newVal = parseFloat((telemetry.thrusterPressure.value + 0.2).toFixed(1));
+                        const isNom = newVal > 2.0;
+                        setTelemetry(prev => ({
+                          ...prev,
+                          thrusterPressure: { 
+                            ...prev.thrusterPressure, 
+                            value: newVal, 
+                            status: isNom ? "NOMINAL" : "CRITICAL" 
+                          }
+                        }));
+                      }}
+                      className="px-2 py-0.5 bg-emerald-950 hover:bg-emerald-800 text-emerald-300 border border-emerald-800 rounded font-bold text-xs"
+                      title="Increase Pressure"
+                    >
+                      + 0.2 bar
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -509,9 +783,56 @@ export default function App() {
                     {telemetry.rwTemperature.status}
                   </span>
                 </div>
-                <div className="flex items-baseline justify-between font-mono">
+                <div className="flex items-center justify-between font-mono">
                   <span className="text-lg font-bold">{telemetry.rwTemperature.value} {telemetry.rwTemperature.unit}</span>
-                  <span className="text-[11px] text-slate-400">Limit: {telemetry.rwTemperature.nominalRange}</span>
+                  
+                  {/* Interactive Adjuster Buttons */}
+                  <div className="flex items-center space-x-1">
+                    <button 
+                      onClick={() => {
+                        const newVal = parseFloat((telemetry.rwTemperature.value + 10.0).toFixed(1));
+                        const isCrit = newVal >= 65.0;
+                        const newTelem = {
+                          ...telemetry,
+                          rwTemperature: { 
+                            ...telemetry.rwTemperature, 
+                            value: newVal, 
+                            status: isCrit ? "CRITICAL" : "NOMINAL" 
+                          }
+                        };
+                        setTelemetry(newTelem);
+                        if (isCrit) {
+                          const mockAnomaly = { subsystem: "AOCS", metric: "Reaction Wheel-3 Temperature", value: `${newVal} °C`, nominal: "< 65.0 °C", queryText: `Reaction Wheel-3 Thermal Overheat to ${newVal}°C` };
+                          setActiveAnomaly(mockAnomaly);
+                          triggerAlarm(`CRITICAL THERMAL OVERHEAT: RW-3 Temperature = ${newVal}°C`);
+                          evaluateAnomaly(mockAnomaly.queryText, mockAnomaly);
+                        }
+                      }}
+
+                      className="px-2 py-0.5 bg-amber-950 hover:bg-amber-800 text-amber-300 border border-amber-800 rounded font-bold text-xs"
+                      title="Increase Temperature (Overheat)"
+                    >
+                      + 10°C
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const newVal = parseFloat((telemetry.rwTemperature.value - 10.0).toFixed(1));
+                        const isNom = newVal < 65.0;
+                        setTelemetry(prev => ({
+                          ...prev,
+                          rwTemperature: { 
+                            ...prev.rwTemperature, 
+                            value: newVal, 
+                            status: isNom ? "NOMINAL" : "CRITICAL" 
+                          }
+                        }));
+                      }}
+                      className="px-2 py-0.5 bg-emerald-950 hover:bg-emerald-800 text-emerald-300 border border-emerald-800 rounded font-bold text-xs"
+                      title="Cool Down"
+                    >
+                      - 10°C
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -681,9 +1002,31 @@ export default function App() {
                     </span>
                   </div>
 
-                  <div className="bg-slate-950/60 border border-slate-800 p-2.5 rounded font-mono text-xs mb-2">
-                    <span className="text-slate-400 block text-[10px] uppercase">Manual Citation:</span>
-                    <span className="text-emerald-300 font-bold block mt-0.5">
+                  <div 
+                    onClick={() => {
+                      if (copilotResponse.verifiedEvidence.sourceVerified) {
+                        // Find matching uploaded PDF or construct virtual SOP viewer
+                        const pdfMatch = uploadedPdfs.find(p => p.filename.toLowerCase().includes((copilotResponse.verifiedEvidence.sopId || "").toLowerCase())) || {
+                          id: copilotResponse.verifiedEvidence.sopId,
+                          filename: copilotResponse.verifiedEvidence.citation.split(':')[0] || "Flight_SOP_Manual.pdf",
+                          totalPages: 112,
+                          proceduresCount: 1,
+                          fullText: `[OFFICIAL FLIGHT SOP MANUAL EXTRACT]\n\nCitation: ${copilotResponse.verifiedEvidence.citation}\n\nProcedure ID: ${copilotResponse.verifiedEvidence.sopId}\n\nExcerpt:\n${copilotResponse.verifiedEvidence.excerpt}\n\nRecommended Flight Steps:\n${copilotResponse.recommendedAction.checklistText}\n\nSafety Risk & What-If Analysis:\nExpected Outcome: ${copilotResponse.whatIfPreview.expectedOutcome}\nPotential Risk: ${copilotResponse.whatIfPreview.potentialRisk}`,
+                          base64Data: ""
+                        };
+                        setSelectedPdf(pdfMatch);
+                      }
+                    }}
+                    className="bg-slate-950/80 border border-emerald-500/40 hover:border-emerald-400 p-2.5 rounded font-mono text-xs mb-2 cursor-pointer group transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 text-[10px] uppercase flex items-center space-x-1">
+                        <span>Manual Citation:</span>
+                        <span className="text-cyan-400 text-[9px] underline group-hover:text-cyan-300">(Click to open SOP Section)</span>
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-emerald-400 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <span className="text-emerald-300 font-bold block mt-0.5 group-hover:underline">
                       {copilotResponse.verifiedEvidence.citation}
                     </span>
                   </div>
@@ -692,6 +1035,7 @@ export default function App() {
                     "{copilotResponse.verifiedEvidence.excerpt}"
                   </p>
                 </div>
+
 
                 {/* SECTION C: RECOMMENDED ACTION & HITL */}
                 <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-3.5">
@@ -847,6 +1191,55 @@ export default function App() {
 
       </main>
 
+      {/* PDF DOCUMENT VIEWER MODAL OVERLAY */}
+      {selectedPdf && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center space-x-3">
+                <FileText className="w-5 h-5 text-cyan-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 font-mono">{selectedPdf.filename}</h3>
+                  <p className="text-xs text-slate-400 font-mono">
+                    Ingested Document • {selectedPdf.totalPages} Pages • {selectedPdf.proceduresCount} Procedures Extracted
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPdf(null)}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono rounded-lg border border-slate-700 transition"
+              >
+                ✕ CLOSE VIEWER
+              </button>
+            </div>
+
+            {/* Modal Content - Embed PDF Viewer iframe & extracted text */}
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-0 overflow-hidden">
+              {/* PDF Document Render Panel */}
+              <div className="md:col-span-8 bg-slate-950 p-2 flex flex-col border-r border-slate-800">
+                <iframe
+                  src={selectedPdf.base64Data}
+                  className="w-full h-full rounded border-0"
+                  title={selectedPdf.filename}
+                />
+              </div>
+
+              {/* RAG Indexed Procedures & Extracted Text Sidebar */}
+              <div className="md:col-span-4 p-4 bg-slate-900/90 overflow-y-auto font-mono text-xs space-y-3">
+                <div className="text-xs font-bold text-cyan-400 uppercase tracking-wide border-b border-slate-800 pb-2">
+                  RAG Indexed Procedures
+                </div>
+                
+                <div className="bg-slate-950 p-3 rounded border border-slate-800 text-slate-300 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
+                  {selectedPdf.fullText || "No raw text preview available."}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer bar */}
       <footer className="h-9 border-t border-slate-800 bg-slate-900/60 px-6 flex items-center justify-between text-[11px] font-mono text-slate-500">
         <div>ANTRIKSH AI Copilot • Space Technology Hackathon (Problem Statement ST-10)</div>
@@ -858,3 +1251,4 @@ export default function App() {
     </div>
   );
 }
+

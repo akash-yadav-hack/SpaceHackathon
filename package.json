@@ -16,6 +16,9 @@
     "js-sha256": "^0.11.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.52.0",
+    "multer": "^2.4.0",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^6.4.299",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
